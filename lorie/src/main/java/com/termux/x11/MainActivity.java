@@ -1292,7 +1292,8 @@ public class MainActivity extends AppCompatActivity implements LorieView.Client 
     }
 
     @SuppressWarnings("SameParameterValue")
-    void clientConnectedStateChanged() {
+    @Override
+    public void clientConnectedStateChanged() {
         runOnUiThread(()-> {
             boolean connected = getLorieView().connected();
             lastServerHeartbeat = SystemClock.uptimeMillis();
@@ -1320,6 +1321,11 @@ public class MainActivity extends AppCompatActivity implements LorieView.Client 
 
             applyWindowSettings();
         });
+    }
+
+    @Override
+    public void onServerHeartbeat(long timeMs) {
+        lastServerHeartbeat = timeMs;
     }
 
     public void getRealMetrics(DisplayMetrics m) {

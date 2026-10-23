@@ -96,6 +96,12 @@ public class LorieView extends SurfaceView implements InputStub {
          * Standalone: the activity; embedded: the hosting activity.
          */
         @NonNull Context getClientContext();
+
+        /** Native hook for X connection state changes (e.g. server hangup). */
+        default void clientConnectedStateChanged() {}
+
+        /** Native hook delivering the periodic X server heartbeat timestamp. */
+        default void onServerHeartbeat(long timeMs) {}
     }
 
     private ClipboardManager clipboard;

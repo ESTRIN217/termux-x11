@@ -38,9 +38,8 @@ static int64_t nowMs() {
 
 static struct {
     jclass self;
-    jmethodID clientConnectedStateChanged, resetIme;
-    jfieldID lastServerHeartbeat;
-} MainActivity = {nullptr};
+    jmethodID clientConnectedStateChanged, resetIme, onServerHeartbeat;
+} Client = {nullptr};
 
 static struct {
     jclass self;
@@ -63,7 +62,8 @@ struct LorieViewResources {
     Renderer renderer;
     JNIEnv* env = nullptr;    // GUI-thread JNIEnv. Must be used only in GUI thread.
     jobject thiz = nullptr;   // global ref to the owning LorieView
-    jobject activity = nullptr; // global ref to the owning MainActivity
+    jobject client = nullptr; // global ref to the host client (MainActivity, or a tab host surrogate)
+    jfieldID clientField = nullptr; // resolved at init; the client is attached after view creation
     volatile int connFd = -1;
     bool destroyed = true;
 
@@ -97,6 +97,13 @@ static jmethodID FindMethodOrDie(JNIEnv *env, jclass clazz, const char* name, co
     }
 
     return method;
+}
+
+// Reads the host client lazily instead of caching it in nativeInit: the view
+// attaches its host (setClient) right after the first construction, so a cached
+// global ref would stay null for embedded hosts. Local ref lives while used.
+static jobject GetClient(JNIEnv* env, LorieViewResources* r) {
+    return r->client ? r->client : env->GetObjectField(r->thiz, r->clientField);
 }
 
 // @CriticalNative: no implicit JNIEnv*/jclass, unlike the @FastNative entries below.
@@ -146,10 +153,14 @@ static jlong nativeInit(JNIEnv *env, jobject thiz) {
         CharBuffer.self = FindClassOrDie(env,  "java/nio/CharBuffer");
         CharBuffer.toString = FindMethodOrDie(env, CharBuffer.self, "toString", "()Ljava/lang/String;", JNI_FALSE);
 
-        MainActivity.self = FindClassOrDie(env,  "com/termux/x11/MainActivity");
-        MainActivity.clientConnectedStateChanged = FindMethodOrDie(env, MainActivity.self, "clientConnectedStateChanged", "()V", JNI_FALSE);
-        MainActivity.lastServerHeartbeat = env->GetFieldID(MainActivity.self, "lastServerHeartbeat", "J");
-        MainActivity.resetIme = FindMethodOrDie(env, env->GetObjectClass(thiz), "resetIme", "()V", JNI_FALSE);
+        // Host callbacks live on whatever object the view reports as its `client`
+        // (LorieView.Client), so both the standalone MainActivity and embeddable
+        // tab hosts work. The view's `client` field may still be empty at nativeInit
+        // time (setClient runs right after), so it is re-read at use sites.
+        Client.self = FindClassOrDie(env, "com/termux/x11/LorieView$Client");
+        Client.clientConnectedStateChanged = FindMethodOrDie(env, Client.self, "clientConnectedStateChanged", "()V", JNI_FALSE);
+        Client.onServerHeartbeat = FindMethodOrDie(env, Client.self, "onServerHeartbeat", "(J)V", JNI_FALSE);
+        Client.resetIme = FindMethodOrDie(env, env->GetObjectClass(thiz), "resetIme", "()V", JNI_FALSE);
     }
 
     return (jlong) (intptr_t) new (malloc(sizeof(LorieViewResources))) LorieViewResources(env, thiz);
@@ -165,10 +176,12 @@ LorieViewResources::LorieViewResources(JNIEnv *callerEnv, jobject view) {
     vm->AttachCurrentThread(&env, nullptr);
     thiz = env->NewGlobalRef(view);
 
-    jfieldID activityField = env->GetFieldID(env->GetObjectClass(view), "activity", "Lcom/termux/x11/MainActivity;");
-    jobject a = env->GetObjectField(view, activityField);
-    if (a)
-        activity = env->NewGlobalRef(a);
+    // Resolve the client field for lazy reads at use sites; the view attaches its
+    // host via setClient() right after construction, so only cache the field id.
+    clientField = env->GetFieldID(env->GetObjectClass(view), "client", "Lcom/termux/x11/LorieView$Client;");
+    jobject c = env->GetObjectField(view, clientField);
+    if (c)
+        client = env->NewGlobalRef(c);
 
     connect(-1);
 }
@@ -189,9 +202,9 @@ LorieViewResources::~LorieViewResources() {
         thiz = nullptr;
     }
 
-    if (activity) {
-        env->DeleteGlobalRef(activity);
-        activity = nullptr;
+    if (client) {
+        env->DeleteGlobalRef(client);
+        client = nullptr;
     }
 }
 
@@ -203,8 +216,9 @@ int LorieViewResources::xcallback(int fd, int events) {
         renderer.setSharedState(nullptr);
         renderer.removeAllBuffers();
         log(DEBUG, "disconnected");
-        if (activity)
-            env->CallVoidMethod(activity, MainActivity.clientConnectedStateChanged);
+        jobject c = GetClient(env, this);
+        if (c)
+            env->CallVoidMethod(c, Client.clientConnectedStateChanged);
         return 1;
     }
 
@@ -275,12 +289,13 @@ int LorieViewResources::xcallback(int fd, int events) {
                     break;
                 }
                 case EVENT_WINDOW_FOCUS_CHANGED: {
-                    env->CallVoidMethod(thiz, MainActivity.resetIme);
+                    env->CallVoidMethod(thiz, Client.resetIme);
                     break;
                 }
                 case EVENT_HEARTBEAT: {
-                    if (activity)
-                        env->SetLongField(activity, MainActivity.lastServerHeartbeat, nowMs());
+                    jobject c = GetClient(env, this);
+                    if (c)
+                        env->CallVoidMethod(c, Client.onServerHeartbeat, nowMs());
                     break;
                 }
                 case EVENT_SYNC_REPLY: {
@@ -506,7 +521,7 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, __unused void *reserved) {
                 auto* r = (LorieViewResources*) ptr;
                 if (r && r->connFd != -1) {
                     if (which_button > 0)
-                        env->CallVoidMethod(r->thiz, MainActivity.resetIme);
+                        env->CallVoidMethod(r->thiz, Client.resetIme);
                     sendEvent(r, .mouse = { .t = EVENT_MOUSE, .x = x, .y = y, .detail = (uint8_t) which_button, .down = button_down, .relative = relative });
                 }
             }},
@@ -520,7 +535,7 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, __unused void *reserved) {
                 lastInputTimestampMs = nowMs();
                 auto* r = (LorieViewResources*) ptr;
                 if (r && r->connFd != -1) {
-                    env->CallVoidMethod(r->thiz, MainActivity.resetIme);
+                    env->CallVoidMethod(r->thiz, Client.resetIme);
                     sendEvent(r, .stylus = { .t = EVENT_STYLUS, .x = x, .y = y, .pressure = (uint16_t) pressure, .tilt_x = (int8_t) tilt_x, .tilt_y = (int8_t) tilt_y, .orientation = (int16_t) orientation, .buttons = (uint8_t) buttons, .eraser = eraser, .mouse = mouse });
                 }
             }},
