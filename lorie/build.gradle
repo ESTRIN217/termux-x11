@@ -53,6 +53,8 @@ android {
     compileOptions.sourceCompatibility JavaVersion.VERSION_1_9
     compileOptions.targetCompatibility JavaVersion.VERSION_1_9
     externalNativeBuild.cmake.path "src/main/cpp/CMakeLists.txt"
+    // 3.22.1 is unusable on aarch64 build hosts; pin the same CMake the app module builds with.
+    externalNativeBuild.cmake.version '3.31.6'
     packaging.jniLibs.useLegacyPackaging false
     buildFeatures.aidl true
     buildFeatures.buildConfig true
