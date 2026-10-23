@@ -60,6 +60,7 @@ import android.widget.Toast;
 
 import androidx.annotation.Keep;
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
@@ -88,7 +89,7 @@ import java.util.TreeSet;
 
 @Keep @SuppressLint("ApplySharedPref")
 @SuppressWarnings({"deprecation", "unused"})
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements LorieView.Client {
     public static final String ACTION_STOP = "com.termux.x11.ACTION_STOP";
     public static final String ACTION_CUSTOM = "com.termux.x11.ACTION_CUSTOM";
 
@@ -328,6 +329,10 @@ public class MainActivity extends AppCompatActivity {
 
         LorieView lorieView = findViewById(R.id.lorieView);
         View lorieParent = (View) lorieView.getParent();
+
+        // Standalone flow: the activity is its own view client (behavior unchanged
+        // from the previous hard reference to MainActivity inside LorieView).
+        lorieView.setClient(this);
 
         mInputHandler = new TouchInputHandler(this, new InputEventSender(this, lorieView));
         mLorieKeyListener = (v, k, e) -> {
@@ -866,6 +871,36 @@ public class MainActivity extends AppCompatActivity {
 
     public LorieView getLorieView() {
         return findViewById(R.id.lorieView);
+    }
+
+    // LorieView.Client implementation: the view used to read these through a
+    // hard MainActivity reference; now the activity delegates to itself.
+    @NonNull public Prefs getPrefs() {
+        return prefs;
+    }
+
+    @Nullable public TermuxX11ExtraKeys getExtraKeys() {
+        return mExtraKeys;
+    }
+
+    public boolean useTermuxEKBarBehaviour() {
+        return useTermuxEKBarBehaviour;
+    }
+
+    public void refreshInputDevices() {
+        mInputHandler.refreshInputDevices();
+    }
+
+    public boolean isCharBasedInputEnforced() {
+        return prefs.enforceCharBasedInput.get();
+    }
+
+    public void postOnUiThread(Runnable runnable) {
+        handler.post(runnable);
+    }
+
+    public Context getClientContext() {
+        return this;
     }
 
     public ViewPager getTerminalToolbarViewPager() {

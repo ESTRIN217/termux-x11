@@ -1,11 +1,45 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Standalone re-declares what the lorie library no longer provides: the
+         Application class, the launcher filters and the CmdEntryPoint broadcast
+         receiver (merge adds these to the library's declarations). -->
     <application
+        android:name="com.termux.x11.LorieApp"
+        android:allowBackup="false"
         android:icon="@mipmap/lorie_ic_launcher"
         android:label="@string/lorie_app_name"
         android:roundIcon="@mipmap/lorie_ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/LorieAppTheme"
-        android:hardwareAccelerated="true">
+        android:hardwareAccelerated="true"
+        tools:ignore="DataExtractionRules,GoogleAppIndexingWarning">
         <meta-data android:name="com.samsung.android.multidisplay.keep_process_alive" android:value="false" />
+
+        <activity
+            android:name="com.termux.x11.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <category android:name="android.intent.category.SECONDARY_HOME" />
+            </intent-filter>
+        </activity>
+
+        <receiver
+            android:name="com.termux.x11.LorieApp$Receiver"
+            android:exported="true"
+            tools:ignore="ExportedReceiver"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="com.termux.x11.CmdEntryPoint.ACTION_START" />
+                <action android:name="com.termux.x11.ACTION_STOP" />
+                <action android:name="com.termux.x11.ACTION_PREFERENCES_CHANGED" />
+                <action android:name="com.termux.x11.ACTION_CUSTOM" />
+            </intent-filter>
+        </receiver>
     </application>
+    <queries>
+        <package android:name="com.termux" />
+    </queries>
 </manifest>

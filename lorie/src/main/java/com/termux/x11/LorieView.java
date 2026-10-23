@@ -37,10 +37,12 @@ import android.view.inputmethod.SurroundingText;
 
 import androidx.annotation.Keep;
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.core.math.MathUtils;
 
 import com.termux.x11.input.InputStub;
 import com.termux.x11.utils.SamsungDexUtils;
+import com.termux.x11.utils.TermuxX11ExtraKeys;
 
 import java.util.Set;
 import java.util.regex.PatternSyntaxException;
@@ -60,13 +62,49 @@ public class LorieView extends SurfaceView implements InputStub {
         void inputTransformChanged(int screenWidth, int screenHeight, Matrix inputTransform);
     }
 
+    /**
+     * Host-provided client that supplies the state and behavior {@link LorieView}
+     * used to reach through a hard {@link MainActivity} reference. This makes the
+     * view embeddable outside {@link MainActivity} (for example inside a
+     * Compose-hosted session tab). {@link MainActivity} implements it by
+     * delegating to itself, so the standalone flow keeps its behavior unchanged.
+     */
+    public interface Client {
+        /** Preferences the view consults (resolution mode, filtering, input behavior). */
+        @NonNull Prefs getPrefs();
+
+        /** Extra keys controller, or null when the extra keys bar is not set up. */
+        @Nullable TermuxX11ExtraKeys getExtraKeys();
+
+        /** Extra keys "Termux-like" behavior flag (unset special keys on commit). */
+        boolean useTermuxEKBarBehaviour();
+
+        /** Delegates hardware/soft key events to the host's input pipeline. */
+        boolean handleKey(@NonNull KeyEvent event);
+
+        /** Refreshes the set of input devices the input handler tracks. */
+        void refreshInputDevices();
+
+        /** Whether the IME should be forced to char-based (TYPE_NULL) input. */
+        boolean isCharBasedInputEnforced();
+
+        /** Runs the given runnable on the host's main-thread handler. */
+        void postOnUiThread(@NonNull Runnable runnable);
+
+        /**
+         * Host context used for display-specific checks (DeX detection).
+         * Standalone: the activity; embedded: the hosting activity.
+         */
+        @NonNull Context getClientContext();
+    }
+
     private ClipboardManager clipboard;
     private long lastClipboardTimestamp = System.currentTimeMillis();
     private long mNativeContext;
     private boolean clipboardSyncEnabled = false;
     private boolean hardwareKbdScancodesWorkaround = false;
     private final InputMethodManager mIMM = (InputMethodManager)getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
-    private final MainActivity activity = MainActivity.findActivity(getContext());
+    @Nullable private Client client;
     private Callback mCallback;
     private final Point p = new Point();
     private final Rect contentInsets = new Rect();
@@ -160,8 +198,9 @@ public class LorieView extends SurfaceView implements InputStub {
         }
 
         void sendKeysWithoutCtrlAlt(Runnable keys) {
-            if (activity.mExtraKeys != null)
-                activity.mExtraKeys.withoutCtrlAlt(keys);
+            Client client = LorieView.this.client;
+            if (client != null && client.getExtraKeys() != null)
+                client.getExtraKeys().withoutCtrlAlt(keys);
             else
                 keys.run();
         }
@@ -223,8 +262,8 @@ public class LorieView extends SurfaceView implements InputStub {
 
             currentComposingText = reuse ? newText : null;
 
-            if (activity.useTermuxEKBarBehaviour && activity.mExtraKeys != null)
-                activity.mExtraKeys.unsetSpecialKeys();
+            if (client != null && client.useTermuxEKBarBehaviour() && client.getExtraKeys() != null)
+                client.getExtraKeys().unsetSpecialKeys();
             commitedText = true;
             return true;
         }
@@ -313,6 +352,22 @@ public class LorieView extends SurfaceView implements InputStub {
 
     public LorieView(Context context, AttributeSet attrs) { super(context, attrs); }
 
+    /**
+     * Attaches the embeddable host client used instead of a hard {@link MainActivity}
+     * reference. Standalone {@link MainActivity} calls it on itself right after view
+     * setup; other hosts (Compose tabs) call it with their controller.
+     *
+     * @param client host client, may be null to run "headless" without host callbacks
+     */
+    public void setClient(@Nullable Client client) {
+        this.client = client;
+    }
+
+    /** @return the current {@link Client}, or null when no host is attached yet. */
+    @Nullable public Client getClient() {
+        return client;
+    }
+
     {
         getHolder().addCallback(mSurfaceCallback);
         clipboard = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
@@ -368,7 +423,7 @@ public class LorieView extends SurfaceView implements InputStub {
     }
 
     void getDimensionsFromSettings(int width, int height) {
-        Prefs prefs = activity.prefs;
+        Prefs prefs = client.getPrefs();
         int w = width;
         int h = height;
         switch(prefs.displayResolutionMode.get()) {
@@ -432,7 +487,7 @@ public class LorieView extends SurfaceView implements InputStub {
 
         if (getDisplay() == null || getDisplay().getDisplayId() == Display.DEFAULT_DISPLAY)
             name = "builtin";
-        else if (SamsungDexUtils.checkDeXEnabled(activity))
+        else if (client != null && SamsungDexUtils.checkDeXEnabled(client.getClientContext()))
             name = "dex";
         else
             name = "external";
@@ -444,7 +499,7 @@ public class LorieView extends SurfaceView implements InputStub {
     @SuppressWarnings("unused")
     private void setRendererViewport(int viewportLeft, int viewportTop, int viewportWidth, int viewportHeight,
                                             float sourceLeft, float sourceTop, float sourceWidth, float sourceHeight) {
-        MainActivity.handler.post(() -> {
+        post(() -> {
             inputViewport.set(viewportLeft, viewportTop, viewportLeft + viewportWidth, viewportTop + viewportHeight);
             inputSourceLeft = sourceLeft;
             inputSourceTop = sourceTop;
@@ -492,7 +547,7 @@ public class LorieView extends SurfaceView implements InputStub {
     }
 
     private void updateViewport() {
-        Prefs prefs = activity.prefs;
+        Prefs prefs = client.getPrefs();
 
         int surfaceW = getMeasuredWidth(), surfaceH = getMeasuredHeight();
         // Views the insets reserve room for are hidden while the dimensions are frozen.
@@ -581,7 +636,7 @@ public class LorieView extends SurfaceView implements InputStub {
         if (hardwareKbdScancodesWorkaround)
             return false;
 
-        return activity.handleKey(event);
+        return client == null ? false : client.handleKey(event);
     }
 
     @Override
@@ -605,7 +660,8 @@ public class LorieView extends SurfaceView implements InputStub {
         hardwareKbdScancodesWorkaround = p.hardwareKbdScancodesWorkaround.get();
         clipboardSyncEnabled = p.clipboardEnable.get();
         setClipboardSyncEnabled(mNativeContext, clipboardSyncEnabled, clipboardSyncEnabled);
-        activity.mInputHandler.refreshInputDevices();
+        if (client != null)
+            client.refreshInputDevices();
     }
 
     // It is used in native code
@@ -663,12 +719,13 @@ public class LorieView extends SurfaceView implements InputStub {
         } else
             clipboard.removePrimaryClipChangedListener(clipboardListener);
 
-        activity.mInputHandler.refreshInputDevices();
+        if (client != null)
+            client.refreshInputDevices();
     }
 
     @Override
     public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
-        if (activity.prefs.enforceCharBasedInput.get())
+        if (client == null || client.isCharBasedInputEnforced())
             outAttrs.inputType = InputType.TYPE_NULL;
         else
             outAttrs.inputType = InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS | InputType.TYPE_TEXT_VARIATION_NORMAL;
