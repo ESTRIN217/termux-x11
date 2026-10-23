@@ -23,14 +23,28 @@ def hostApplicationId = hostProject.android.defaultConfig.applicationId ?: hostP
 
 android {
     namespace 'com.termux.x11'
-    //noinspection GrDeprecatedAPIUsage
-    compileSdkVersion 34
+    compileSdk 34
     ndkVersion termuxX11NdkVersion
     defaultConfig {
-        minSdkVersion 24
-        targetSdkVersion 34
+        minSdk 24
+        targetSdk 34
+        // Runtime del fork es arm64-v8a única (proot lo fija); limitamos el
+        // build nativo colosal del X server a esa ABI.
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
         buildConfigField "String", "VERSION_NAME", "\"${termuxX11VersionName}\""
-        buildConfigField "String", "COMMIT", "\"" + ("git rev-parse HEAD\n".execute().getText().trim() ?: (System.getenv('CURRENT_COMMIT') ?: "NO_COMMIT")) + "\""
+        // Same COMMIT value as before; taken via providers.exec to stay
+        // configuration-cache compatible in host repos that enable it.
+        def gitCommit = { String fallback ->
+            try {
+                providers.exec {
+                    workingDir = project.projectDir
+                    commandLine("git", "rev-parse", "HEAD")
+                }.standardOutput.asText.get().trim() ?: fallback
+            } catch (Exception ignored) { fallback }
+        }((System.getenv('CURRENT_COMMIT') ?: "NO_COMMIT") ?: "NO_COMMIT")
+        buildConfigField "String", "COMMIT", "\"" + gitCommit + "\""
         buildConfigField "String", "APPLICATION_ID", "\"${hostApplicationId}\""
 
         consumerProguardFiles 'proguard-rules.pro'
@@ -39,7 +53,7 @@ android {
     compileOptions.sourceCompatibility JavaVersion.VERSION_1_9
     compileOptions.targetCompatibility JavaVersion.VERSION_1_9
     externalNativeBuild.cmake.path "src/main/cpp/CMakeLists.txt"
-    packagingOptions.jniLibs.useLegacyPackaging false
+    packaging.jniLibs.useLegacyPackaging false
     buildFeatures.aidl true
     buildFeatures.buildConfig true
 }
@@ -47,10 +61,10 @@ android {
 dependencies {
     //noinspection DifferentStdlibGradleVersion
 
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.4.21"
-    implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0'
-    implementation 'androidx.preference:preference:1.2.1'
-    compileOnly project(':shell-loader:stub')
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.4.20"
+    implementation "androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0"
+    implementation "androidx.preference:preference:1.2.1"
+    compileOnly project(':termux-x11-stub')
 }
 afterEvaluate {
     tasks.register("generatePrefs") {

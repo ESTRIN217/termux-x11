@@ -1,5 +1,15 @@
 ext.termuxX11VersionName = {
-    def commit = 'git rev-parse --verify --short HEAD'.execute().text.trim()
+    // Configuration-cache safe external process (providers.exec), same result as
+    // the old 'git ...'.execute() invocation.
+    def commit = ""
+    try {
+        commit = providers.exec {
+            workingDir = project.projectDir
+            commandLine("git", "rev-parse", "--verify", "--short", "HEAD")
+        }.standardOutput.asText.get().trim()
+    } catch (Exception ignored) {
+        commit = ""
+    }
     def version = "1.03.01"
     "${version}-${commit.length() == 1 ? "nongit" : commit}-${(new Date()).format("dd.MM.yy")}"
 }()
@@ -8,4 +18,7 @@ ext.termuxX11VersionName = {
 // lorie-app, or a host app integrating it) should read this instead of letting AGP pick its
 // own default, otherwise :lorie's CMake config differs between them and its native code gets
 // compiled twice.
-ext.termuxX11NdkVersion = "29.0.14206865"
+// Terminal host (spec 014): when the host repo pins an NDK version via its gradle
+// .properties, honor it so both modules share one toolchain; upstream standalone
+// builds keep 29.0.14206865.
+ext.termuxX11NdkVersion = { (rootProject.findProperty('ndkVersion') ?: "29.0.14206865").toString() }()
