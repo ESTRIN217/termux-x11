@@ -201,16 +201,13 @@ public class CmdEntryPoint extends ICmdEntryInterface.Stub {
 
         // Our fork ships libs with legacy packaging (extractNativeLibs="true"),
         // so the .so is uncompressed inside the APK and dlopen via the
-        // "base.apk!/lib/…!" path fails with UnsatisfiedLinkError. The platform
-        // extracts it to nativeLibraryDir on install — try that first (the
-        // spawning app itself loads the same file), then the in-APK path.
-        try {
-            String nativeDir = ctx.getApplicationInfo().nativeLibraryDir;
-            if (nativeDir != null && new java.io.File(nativeDir, libName).exists())
-                libPath = new java.io.File(nativeDir, libName).getAbsolutePath();
-        } catch (Exception e) {
-            Log.e("CmdEntryPoint", "Failed to probe nativeLibraryDir", e);
-        }
+        // "base.apk!/lib/…!" path fails with UnsatisfiedLinkError. The
+        // spawning app passes its real extracted-lib directory through
+        // TERMUX_X11_LIBDIR (createContext() above returns the system
+        // context, whose nativeLibraryDir is the framework's, not ours).
+        String nativeDir = System.getenv("TERMUX_X11_LIBDIR");
+        if (nativeDir != null && new java.io.File(nativeDir, libName).exists())
+            libPath = new java.io.File(nativeDir, libName).getAbsolutePath();
 
         if (libPath == null) {
             String path = "lib/" + (android.os.Process.is64Bit() ? Build.SUPPORTED_64_BIT_ABIS[0] : Build.SUPPORTED_32_BIT_ABIS[0]) + "/" + libName;
