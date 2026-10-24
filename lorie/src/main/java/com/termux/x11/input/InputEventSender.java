@@ -68,11 +68,11 @@ public final class InputEventSender {
      * this directly against a {@link InputStub} view that is not owned by an
      * activity).
      *
+     * @param injector The {@link InputStub} doing the real injection.
      * @param capturingEnabledConsumer Called with {@code false} when ESC should
      *                                pause key capturing; may be a no-op.
-     * @param injector The {@link InputStub} doing the real injection.
      */
-    public InputEventSender(Consumer<Boolean> capturingEnabledConsumer, InputStub injector) {
+    public InputEventSender(InputStub injector, Consumer<Boolean> capturingEnabledConsumer) {
         if (injector == null)
             throw new NullPointerException();
         mCapturingEnabledConsumer = capturingEnabledConsumer;
