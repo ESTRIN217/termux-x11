@@ -60,7 +60,7 @@ public final class InputEventSender {
     private int mLockKeysState = -1;
 
     public InputEventSender(MainActivity activity, InputStub injector) {
-        this(activity::setCapturingEnabled, injector);
+        this(injector, activity::setCapturingEnabled);
     }
 
     /**
