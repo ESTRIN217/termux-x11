@@ -20,6 +20,7 @@ import com.termux.x11.MainActivity;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.function.Consumer;
 
 /**
  * A set of functions to send users' activities, which are represented by Android classes, to
@@ -36,9 +37,10 @@ public final class InputEventSender {
         KEYCODE_APP_SWITCH
     );
 
-    private final MainActivity mActivity;
     private final InputStub mInjector;
     private final float[] mappedPoint = new float[2];
+    /** Called to pause pointer capturing (was MainActivity#setCapturingEnabled). */
+    private final Consumer<Boolean> mCapturingEnabledConsumer;
 
     public boolean tapToMove = false;
     public boolean preferScancodes = false;
@@ -58,9 +60,22 @@ public final class InputEventSender {
     private int mLockKeysState = -1;
 
     public InputEventSender(MainActivity activity, InputStub injector) {
+        this(activity::setCapturingEnabled, injector);
+    }
+
+    /**
+     * Constructor decoupled from MainActivity (Terminal embedded X11 tabs build
+     * this directly against a {@link InputStub} view that is not owned by an
+     * activity).
+     *
+     * @param capturingEnabledConsumer Called with {@code false} when ESC should
+     *                                pause key capturing; may be a no-op.
+     * @param injector The {@link InputStub} doing the real injection.
+     */
+    public InputEventSender(Consumer<Boolean> capturingEnabledConsumer, InputStub injector) {
         if (injector == null)
             throw new NullPointerException();
-        mActivity = activity;
+        mCapturingEnabledConsumer = capturingEnabledConsumer;
         mInjector = injector;
         mPressedTextKeys = new TreeSet<>();
         mPressedKeys = new TreeSet<>();
@@ -301,8 +316,9 @@ public final class InputEventSender {
         else
             mPressedKeys.remove(keyCode);
 
-        if (keyCode == KEYCODE_ESCAPE && !pressed && e.hasNoModifiers())
-            mActivity.setCapturingEnabled(false);
+        if (keyCode == KEYCODE_ESCAPE && !pressed && e.hasNoModifiers()
+                && mCapturingEnabledConsumer != null)
+            mCapturingEnabledConsumer.accept(false);
 
         // We try to send all other key codes to the host directly.
         return mInjector.sendKeyEvent(scancode, keyCode, pressed);
