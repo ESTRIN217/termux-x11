@@ -854,6 +854,11 @@ public class LoriePreferences extends AppCompatActivity implements PreferenceFra
                 return preferences.getInt(key, (int) defValue);
             }
 
+            public void put(int v) {
+                checkAttached();
+                preferences.edit().putInt(key, v).commit();
+            }
+
             public int defValue() {
                 checkAttached();
                 return preferences.getInt(key, (int) defValue);
