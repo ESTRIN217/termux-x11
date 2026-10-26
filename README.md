@@ -1,48 +1,35 @@
 
 # Termux:X11
 
-[![Nightly build](https://github.com/termux/termux-x11/actions/workflows/debug_build.yml/badge.svg?branch=master)](https://github.com/termux/termux-x11/actions/workflows/debug_build.yml) [![Join the chat at https://gitter.im/termux/termux](https://badges.gitter.im/termux/termux.svg)](https://gitter.im/termux/termux) [![Join the Termux discord server](https://img.shields.io/discord/641256914684084234?label=&logo=discord&logoColor=ffffff&color=5865F2)](https://discord.gg/HXpF69X)
-
-A [Termux](https://termux.com) X11 server add-on app.
+> **Fork notice:** This repository is a fork of [termux/termux-x11](https://github.com/termux/termux-x11) maintained by ESTRIN217 as part of the [Terminal](https://github.com/ESTRIN217/Terminal) fork. Here the project is built as Android libraries (`:termux-x11-lorie`, `:termux-x11-stub`) embedded into the Terminal app, not distributed as a standalone app. Binaries, Java namespaces (`com.termux.x11`), intent actions and the `termux-x11` command keep their upstream names. Not affiliated with the Termux team or with X.Org.
 
 ## About
-Termux:X11 is a fully fledged X server. It is built with Android NDK and optimized to be used with Termux.
+Termux:X11 is a fully fledged X server. It is built with Android NDK and optimized to be used with Android GPL Linux environments — in this fork, with the [Terminal](https://github.com/ESTRIN217/Terminal) app.
 
 ## Submodules caveat
 This repo uses submodules. Use 
 
 ```
-git clone --recurse-submodules https://github.com/termux/termux-x11 
+git clone --recurse-submodules https://github.com/ESTRIN217/termux-x11 
 ```
 or
 ```
-git clone https://github.com/termux/termux-x11
+git clone https://github.com/ESTRIN217/termux-x11
 cd termux-x11
 git submodule update --init --recursive
 ```
+
+If you only want to build the Terminal app you don't need to clone this repo: it is integrated as a git submodule of [Terminal](https://github.com/ESTRIN217/Terminal) (clone it with `--recurse-submodules` too).
 
 ## How does it work?
 Just like any other X server.
 
 ## Setup Instructions
-Termux:X11 requires Android 8 or later. It consists of an Android app and a companion termux package, and you must install both.
+Termux:X11 requires Android 8 or later. In this fork you don't install anything separately: the X server and the companion command are compiled into the [Terminal](https://github.com/ESTRIN217/Terminal) app (as the Android libraries `:termux-x11-lorie` / `:termux-x11-stub`), so installing the Terminal APK from [its releases](https://github.com/ESTRIN217/Terminal/releases) is all you need.
 
-The Android app is available via the [nightly release tag](https://github.com/termux/termux-x11/releases/tag/nightly) of this repository. Download and install `termux-x11-universal-debug.apk`.
+The companion `termux-x11` command is spawned by the app itself (`app_process` from the in-app companion spawner), not by a separate Termux package. If you work inside a proot/chroot guest, the app wires the environment (`DISPLAY`, `TMPDIR`, XKB paths) and you can launch `termux-x11 :0` from inside the guest. Usage documentation for this fork: <https://terminal-gnulinux-docs.web.app/x11.html>.
 
-The companion termux package is available from the termux graphical repository. You can ensure it's enabled and install this package with `pkg i x11-repo && pkg i termux-x11-nightly`. If you need to, you can also download a `.deb` or `*.tar.xz` from the same nightly release tag as above.
-
-### Avoiding slowdowns
-<details>
-<summary>Android gives less CPU time to apps that aren't on screen — install the sharedUid APK to avoid this</summary>
-
-Android gives less CPU time to apps that aren't on screen. Once Termux:X11 opens, Android treats Termux itself as no longer being on screen, so things running inside Termux (like your desktop apps) can slow down.
-
-To avoid this, install `termux-x11-universal-sharedUid-debug.apk` instead of the regular one (same [nightly release tag](https://github.com/termux/termux-x11/releases/tag/nightly) or CI artifacts). This variant runs as part of Termux itself, so Android keeps treating it as one app and doesn't slow it down.
-
-This variant only works with the Termux app installed **from GitHub**, not F-Droid or Google Play — those are signed with different keys, and a shared UID requires matching signatures.
-</details>
-
-Finally, most people will want to use a desktop environment with Termux:X11. If you don't know what that means or don't know which one to pick, run `pkg i xfce` (also from `x11-repo`) to install a good one to start with. The rest of these instructions will assume that your goal is to run an XFCE desktop, or that you can modify the instructions as you follow them for your actual goal.
+Finally, most people will want to use a desktop environment with Termux:X11. In this fork you would install it in the guest distribution (for example, `apt install xfce4` in the Debian rootfs shipped by Terminal). The rest of these instructions will assume that your goal is to run an XFCE desktop, or that you can modify the instructions as you follow them for your actual goal.
 
 ## Running Graphical Applications
 You can start your desired graphical application by doing:
@@ -104,12 +91,11 @@ If you plan to use the program with proot, keep in mind that you need to launch 
 
 If passing this option is not possible, set the TMPDIR environment variable to point to the directory that corresponds to /tmp in the target container.
 
-If you are using proot-distro you should know that it is possible to start `termux-x11` command from inside proot container.
-
-Example, run in a Termux shell (not inside the proot container):
+If you are using a guest distribution (as distributed in the Terminal fork, which
+boots a Debian rootfs with proot), the app runs the companion for you and sets the
+environment; the command form from inside the guest is:
 ```
 termux-x11 :1 &
-proot-distro login ubuntu --shared-tmp
 ```
 Then, inside the container:
 ```
@@ -124,15 +110,16 @@ This directory must be accessible from the shell from which you launch termux-x1
 
 Also you must set `XKB_CONFIG_ROOT` environment variable pointing to container's `/usr/share/X11/xkb` directory, otherwise you will have `xkbcomp`-related errors.
 
-You can get loader for nightly build from an artifact of [last successful build](https://github.com/termux/termux-x11/actions/workflows/debug_build.yml)
+You can get the loader from the Terminal GitHub release artifacts; normally the app spawns it for you (`X11CompanionSpawner`), the manual invocation below is a fallback for advanced use.
 
 Do not forget to disable SELinux
 ```
 setenforce 0
 export TMPDIR=/path/to/chroot/container/tmp
-export CLASSPATH=$(/system/bin/pm path com.termux.x11 | cut -d: -f2)
+export CLASSPATH=$(/system/bin/pm path com.estrin217.terminal | cut -d: -f2)
 /system/bin/app_process / --nice-name=termux-x11 com.termux.x11.CmdEntryPoint :0
 ```
+In this fork the classes live in the Terminal APK (`com.estrin217.terminal`), but the entry-point class keeps its upstream name (`com.termux.x11.CmdEntryPoint`), same as the intent actions and the `termux-x11` process name.
 
 ### Force stopping X server (running in termux background, not an activity)
 
@@ -144,22 +131,25 @@ pkill -f termux-x11
 ### Closing Android activity (running in foreground, not X server)
 
 ```
-am broadcast -a com.termux.x11.ACTION_STOP -p com.termux.x11
+am broadcast -a com.termux.x11.ACTION_STOP -p com.estrin217.terminal
 ```
 
 To close a window opened with `-tag`:
 ```
-am broadcast -a com.termux.x11.ACTION_STOP -p com.termux.x11 --es document_tag main
+am broadcast -a com.termux.x11.ACTION_STOP -p com.estrin217.terminal --es document_tag main
 ```
 
 ### Opening Termux:X11 activity from command line
 
 ```
-am start --user 0 -n com.termux.x11/com.termux.x11.MainActivity
+am start --user 0 -n com.estrin217.terminal/com.termux.x11.MainActivity
 ```
 
+> In this fork the activities live inside the Terminal app (`com.estrin217.terminal`), so the activity commands target that package while the class names keep their upstream `com.termux.x11` namespace. Normal session/window management is done from the Terminal UI (X11 tab), which internally uses the same actions.
+
 ### Logs
-If you need to obtain logs from the `com.termux.x11` application,
+If you need to obtain logs from the X11 server (in this fork it belongs to the
+`com.estrin217.terminal` application),
 set the `TERMUX_X11_DEBUG` environment variable to 1, like this:
 `TERMUX_X11_DEBUG=1 termux-x11 :0`
 
@@ -192,6 +182,8 @@ You can access preferences menu three ways:
 
 ![image](./.github/static/3.jpg)
 </details>
+
+> **In this fork** there is no standalone Termux:X11 launcher presence, so only the notification path applies (when connected); the same underlying preferences are also exposed directly in the Terminal app at **Settings → Ajustes X11** (Output / Pointer / Keyboard sections).
 
 ## Toggling keyboard
 Just press "Back" button.
@@ -233,6 +225,11 @@ termux-x11 :1 -xstartup "xfce4-session" -dpi 120
 ```
 
 ## Changing, dumping and restoring preferences from commandline
+
+> **In this fork** the guests don't ship the `termux-x11-preference` tool (no
+> `termux-x11-nightly` package is installed): manage the same preferences from the
+> Terminal app (**Settings → Ajustes X11**). The upstream tool documented below
+> still exists for Termux environments, where the package is available.
 
 It is possible to change preferences of termux-x11 from command line.
 `termux-x11-nightly` package contains `termux-x11-preference` tool which can be used like 
