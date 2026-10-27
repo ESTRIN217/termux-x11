@@ -251,3 +251,11 @@ Check how `shell-loader/src/main/java/com/termux/x11/Loader.java` works.
 
 # License
 Released under the [GPLv3 license](https://www.gnu.org/licenses/gpl-3.0.html).
+
+<p align="center">
+  Desarrollado con pasión por <b>ESTRIN217</b>.
+</p>
+
+<p align="center">
+  Hecho con ❤️ en Venezuela.
+</p>
